@@ -271,14 +271,17 @@ class CrawlOrchestrator:
         return {"page": 1, "age_minutes": 0}
 
     def _save_discovery_checkpoint(self, page: int):
-        """Save discovery checkpoint for resume."""
+        """Save discovery checkpoint atomically for resume safety."""
         checkpoint_file = settings.data_dir / "discovery_checkpoint.json"
+        tmp_file = settings.data_dir / "discovery_checkpoint.tmp"
         try:
             import json
-            checkpoint_file.write_text(json.dumps({
+            data = json.dumps({
                 "page": page,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
-            }, ensure_ascii=False), encoding="utf-8")
+            }, ensure_ascii=False)
+            tmp_file.write_text(data, encoding="utf-8")
+            tmp_file.replace(checkpoint_file)
         except Exception:
             pass
 
