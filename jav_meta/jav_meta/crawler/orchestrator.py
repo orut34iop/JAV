@@ -237,8 +237,12 @@ class CrawlOrchestrator:
     def _save_discovered_codes(self, page: int, items: List[tuple]) -> List[str]:
         """Save discovered codes to discovery_queue. Returns list of codes saved."""
         codes = []
+        seen_this_batch = set()
         with SessionLocal() as db:
             for code, detail_url, _thumb_url in items:
+                if code in seen_this_batch:
+                    continue
+                seen_this_batch.add(code)
                 existing = db.query(DiscoveryQueue).filter(DiscoveryQueue.code == code).first()
                 if not existing:
                     db.add(DiscoveryQueue(
