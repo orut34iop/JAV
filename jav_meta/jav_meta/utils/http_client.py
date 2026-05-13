@@ -16,6 +16,57 @@ USER_AGENTS = [
 ]
 
 
+class AdaptiveSemaphore:
+    """Asyncio-compatible semaphore that supports safe dynamic limit adjustment.
+
+    Unlike asyncio.Semaphore, the limit can be changed at runtime without
+    leaving tasks waiting on a discarded semaphore object (which causes deadlocks).
+    """
+
+    def __init__(self, initial: int):
+        self._max = initial
+        self._current = 0
+        self._lock = asyncio.Lock()
+        self._condition = asyncio.Condition(self._lock)
+
+    def set_max(self, value: int):
+        self._max = max(1, value)
+        if self._current < self._max:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon(self._notify_sync)
+            except RuntimeError:
+                pass
+
+    def _notify_sync(self):
+        try:
+            asyncio.create_task(self._notify_async())
+        except RuntimeError:
+            pass
+
+    async def _notify_async(self):
+        async with self._lock:
+            self._condition.notify_all()
+
+    async def acquire(self):
+        async with self._lock:
+            while self._current >= self._max:
+                await self._condition.wait()
+            self._current += 1
+
+    async def release(self):
+        async with self._lock:
+            self._current -= 1
+            self._condition.notify()
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.release()
+
+
 class AdaptiveClient:
     def __init__(
         self,
@@ -35,7 +86,7 @@ class AdaptiveClient:
         self.cookie = cookie or settings.javbus_cookie
         self.proxy = proxy or settings.proxy_url
 
-        self.semaphore = asyncio.Semaphore(self.concurrency)
+        self.semaphore = AdaptiveSemaphore(self.concurrency)
         self.current_concurrency = self.concurrency
         self.client: Optional[httpx.AsyncClient] = None
 
@@ -73,7 +124,7 @@ class AdaptiveClient:
         old = self.current_concurrency
         self.current_concurrency = max(1, old - 2)
         if old != self.current_concurrency:
-            self.semaphore = asyncio.Semaphore(self.current_concurrency)
+            self.semaphore.set_max(self.current_concurrency)
             logger.warning(f"Adaptive concurrency reduced: {old} -> {self.current_concurrency}")
 
     def _adapt_up(self):
@@ -82,7 +133,7 @@ class AdaptiveClient:
         old = self.current_concurrency
         self.current_concurrency = min(self.concurrency, old + 1)
         if old != self.current_concurrency:
-            self.semaphore = asyncio.Semaphore(self.current_concurrency)
+            self.semaphore.set_max(self.current_concurrency)
             logger.info(f"Adaptive concurrency increased: {old} -> {self.current_concurrency}")
 
     async def get(self, url: str, **kwargs) -> httpx.Response:

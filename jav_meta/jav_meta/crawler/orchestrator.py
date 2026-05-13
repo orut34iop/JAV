@@ -94,7 +94,7 @@ class CrawlOrchestrator:
         )
 
     def _on_reduce_concurrency(self, new_val: int):
-        self.client.semaphore = asyncio.Semaphore(new_val)
+        self.client.semaphore.set_max(new_val)
         self.client.current_concurrency = new_val
 
     def _on_increase_delay(self, new_val: float):

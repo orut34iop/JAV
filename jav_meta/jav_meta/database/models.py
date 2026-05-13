@@ -10,6 +10,11 @@ from sqlalchemy.orm import relationship
 from jav_meta.database.engine import Base
 
 
+def _utc_now() -> datetime.datetime:
+    """Return a naive UTC datetime (compatible replacement for deprecated utcnow)."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
 class MovieStatus(str, PyEnum):
     ACTIVE = "active"
     MISSING = "missing"
@@ -38,8 +43,8 @@ class Source(Base):
     priority = Column(Integer, default=100)
     config = Column(Text, default="{}")  # JSON string
     last_crawl_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class Movie(Base):
@@ -62,8 +67,8 @@ class Movie(Base):
     description = Column(Text, nullable=True)
     source = Column(String(64), default="javbus")
     status = Column(String(16), default=MovieStatus.ACTIVE)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     actresses = relationship("Actress", secondary="movie_actress", back_populates="movies")
     genres = relationship("Genre", secondary="movie_genre", back_populates="movies")
@@ -91,8 +96,8 @@ class Actress(Base):
     hip = Column(String(16), nullable=True)
     cup = Column(String(8), nullable=True)
     source = Column(String(64), default="javbus")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     movies = relationship("Movie", secondary="movie_actress", back_populates="actresses")
 
@@ -116,7 +121,7 @@ class Genre(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(64), nullable=False, unique=True)
     source_name = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
     movies = relationship("Movie", secondary="movie_genre", back_populates="genres")
 
@@ -137,7 +142,7 @@ class Screenshot(Base):
     url = Column(Text, nullable=True)
     local_path = Column(Text, nullable=True)
     file_hash = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
     movie = relationship("Movie", back_populates="screenshots")
 
@@ -156,7 +161,7 @@ class Magnet(Base):
     size_bytes = Column(BigInteger, nullable=True)
     date = Column(String(32), nullable=True)
     source = Column(String(64), default="javbus")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
     movie = relationship("Movie", back_populates="magnets")
 
@@ -171,7 +176,7 @@ class CrawlLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     source_id = Column(Integer, ForeignKey("sources.id"), nullable=True)
     crawl_type = Column(String(16), nullable=False)  # full / incremental
-    started_at = Column(DateTime, default=datetime.datetime.utcnow)
+    started_at = Column(DateTime, default=_utc_now)
     finished_at = Column(DateTime, nullable=True)
     page_from = Column(Integer, nullable=True)
     page_to = Column(Integer, nullable=True)

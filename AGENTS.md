@@ -225,16 +225,11 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 
 > 当前代码中已确认但尚未修复的严重问题和新会话接手时必须知晓的风险。
 
-1. **http_client.py — 运行时替换 `asyncio.Semaphore`（严重并发安全 bug）**
-   - `_adapt_down()` 和 `_adapt_up()` 在运行中直接替换 `self.semaphore = asyncio.Semaphore(new_val)`。
-   - 如果有任务正在等待旧的 semaphore，替换后这些任务将永久死锁。
-   - **缓解**：当前代码在大多数场景下能工作（替换通常发生在无任务等待的间隙），但高并发或网络抖动时存在风险。
-   - **修复方向**：实现一个支持动态调整上限的自定义并发控制器，或改用基于 `asyncio.Lock` + 计数器的方案。
+1. ~~http_client.py — 运行时替换 `asyncio.Semaphore`（严重并发安全 bug）~~ ✅ **已修复**
+   - 已实现 `AdaptiveSemaphore` 类，通过 `asyncio.Condition` 安全支持动态上限调整，彻底消除死锁风险。
 
-2. **models.py — 大量使用已废弃的 `datetime.datetime.utcnow()`**
-   - 共 12 处 `default=datetime.datetime.utcnow` / `onupdate=datetime.datetime.utcnow`。
-   - Python 3.12+ 已将该方法标记为废弃，未来版本移除后将导致数据库默认值崩溃。
-   - **修复方向**：统一替换为 `datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)` 或自定义 `_utc_now()` 工厂函数。
+2. ~~models.py — 大量使用已废弃的 `datetime.datetime.utcnow()`~~ ✅ **已修复**
+   - 已统一替换为 `_utc_now()` 工厂函数，返回与 `utcnow()` 格式兼容的 naive UTC datetime。
 
 ---
 
