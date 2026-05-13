@@ -122,6 +122,12 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 > 
 > 绝不允许"等用户提醒再保存"、"等下次会话再说"、或"先记在脑子里"。没有持久化到磁盘的信息等于不存在。
 
+### 代码修改后必须立即提交
+- **任何文件修改（包括代码修复、配置更新、文档变更、约束写入）完成后，必须第一时间执行 `git add` + `git commit` + `git push`。**
+- 绝不允许"等所有改动做完再一起提交"、"等用户说再提交"、或"先放着不管"。
+- 单个逻辑变更对应一个 commit，commit message 必须清晰描述改动内容。
+- 提交前必须确认没有敏感文件（如 `.env`）被意外纳入。
+
 ---
 
 ## Development & Testing Closure Policy
