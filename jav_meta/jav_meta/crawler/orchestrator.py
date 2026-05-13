@@ -137,6 +137,21 @@ class CrawlOrchestrator:
         if not skip_selftest:
             SelfTestRunner().assert_ready()
 
+        sections = [False]
+        if uncensored:
+            sections.append(True)
+
+        for section_idx, is_uncensored in enumerate(sections):
+            section_label = "uncensored" if is_uncensored else "regular"
+            if section_idx > 0:
+                # Clear checkpoint between sections so each starts from page 1
+                self._clear_discovery_checkpoint()
+            logger.info(f"Discovery: scanning {section_label} section")
+            await self._discover_section(is_uncensored=is_uncensored)
+
+    async def _discover_section(self, is_uncensored: bool = False):
+        """Scan list pages for one section (regular or uncensored)."""
+
         # Apply discovery-phase HTTP config
         self.client.semaphore.set_max(settings.discovery_concurrency)
         self.client.current_concurrency = settings.discovery_concurrency
@@ -161,7 +176,7 @@ class CrawlOrchestrator:
             page = start_page
             total_discovered = 0
             empty_streak = 0
-            http_errors_in_streak = False
+            last_empty_had_error = False
 
             try:
                 while self._running:
@@ -171,25 +186,32 @@ class CrawlOrchestrator:
                         completed=total_discovered,
                     )
 
+                    page_had_error = False
                     try:
-                        items = await self.scraper.crawl_list_page(page, uncensored=uncensored)
+                        items = await self.scraper.crawl_list_page(page, uncensored=is_uncensored)
                     except Exception as e:
                         logger.error(f"Failed to fetch list page {page}: {e}")
+                        items = None
+                        page_had_error = True
+
+                    if items is None:
+                        # Network error — not a true empty page, reset streak
+                        empty_streak = 0
                         page += 1
                         continue
 
                     if not items:
+                        # Genuinely empty page (HTTP 200 but no movie-box items)
                         empty_streak += 1
-                        logger.info(f"Empty page {page} (empty streak: {empty_streak}/{settings.discovery_empty_page_threshold})")
-                    else:
-                        if empty_streak > 0:
-                            # Check if the empty pages had HTTP errors
-                            if not http_errors_in_streak and empty_streak >= settings.discovery_empty_page_threshold:
-                                logger.info("Reached end of catalog (no HTTP errors during empty streak)")
-                                break
-                            empty_streak = 0
-                            http_errors_in_streak = False
+                        last_empty_had_error = page_had_error
+                        logger.info(f"Empty page {page} (streak: {empty_streak}/{settings.discovery_empty_page_threshold})")
 
+                        if empty_streak >= settings.discovery_empty_page_threshold and not last_empty_had_error:
+                            logger.info("Reached end of catalog (no HTTP errors during empty streak)")
+                            break
+                    else:
+                        empty_streak = 0
+                        last_empty_had_error = False
                         codes = self._save_discovered_codes(page, items)
                         total_discovered += len(codes)
                         self.reporter.update(completed=total_discovered)
@@ -253,6 +275,15 @@ class CrawlOrchestrator:
                 "page": page,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
             }, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _clear_discovery_checkpoint(self):
+        """Remove discovery checkpoint so next section starts fresh."""
+        checkpoint_file = settings.data_dir / "discovery_checkpoint.json"
+        try:
+            if checkpoint_file.exists():
+                checkpoint_file.unlink()
         except Exception:
             pass
 

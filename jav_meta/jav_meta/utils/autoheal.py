@@ -152,7 +152,7 @@ class AutoHealer:
             self._pause_event.set()
 
         event = HealEvent(
-            timestamp=datetime.datetime.utcnow(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
             trigger=trigger,
             action=action,
             old_value=old_v,
