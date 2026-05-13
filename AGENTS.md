@@ -221,6 +221,37 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 - **SQL 备份**: `data/dumps/` 下已有两次自动导出的 SQL dump，可作为回滚参考。
 - **环境**: `jav_meta/.venv` 已初始化，`uv sync` 已完成，依赖就绪。
 
+## Crawl Task Execution Policy
+
+> **用户核心指令：全网抓取任务一旦启动，必须执行到完成，绝不允许因会话中断或异常而永久停止。**
+
+### 任务启动规则
+- 默认执行 `uv run javdb crawl javbus --full`。
+- 如果需要同时抓取无码区，附加 `--uncensored`。
+- 会话开始时若发现已有未完成的 `CrawlLog`（状态为 `running` 或 `failed`），优先从断点续传，而非从头开始。
+
+### 中断恢复机制
+- **断点续传依赖**：`CrawlOrchestrator` 的 `CrawlLog` 表记录了 `checkpoint_page`、`status`、`items_count` 等状态。每次重新启动抓取时，Orchestrator 会自动读取最新的断点信息。
+- **Shell 超时限制**：单次 Shell 调用最长 300 秒，超过会被强制杀死。因此必须采用**循环执行策略**：
+  - 每轮执行 `javdb crawl javbus --full`，超时 300 秒。
+  - 超时后，立即检查最新 `CrawlLog` 记录，确认当前状态和已完成的页码。
+  - 如果状态仍为 `running` 或 `failed` 且未达最后一页，**立即无缝重启下一轮**。
+  - 如果状态为 `completed`，任务真正结束，停止循环。
+- **异常处理**：如果命令返回非零退出码或抛出异常，必须：
+  1. 读取最后 50 行日志分析异常原因。
+  2. 如果是网络/请求错误，直接重启（AutoHealer 会自动降速）。
+  3. 如果是数据库锁定（`database is locked`），先检查并清理残留 Python 进程，再重启。
+  4. 如果是解析错误（selector 失效），尝试重启一次，若仍失败则切换 fallback 模式或向用户报告。
+
+### 进度报告要求
+- Orchestrator 自身每 180 秒（`PROGRESS_INTERVAL_SECONDS`）输出一次进度报告。
+- 如果超过 3 分钟没有任何进度输出，主动查询 `CrawlLog` 并向用户报告当前状态。
+
+### 永不遗忘
+- 以上规则是用户用愤怒换来的硬性约束，任何新会话接手项目时，**读取 AGENTS.md 后必须立即知晓并遵守**。
+
+---
+
 ## Known Issues & Technical Debt
 
 > 当前代码中已确认但尚未修复的严重问题和新会话接手时必须知晓的风险。
