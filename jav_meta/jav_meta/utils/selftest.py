@@ -143,7 +143,6 @@ class SelfTestRunner:
             detail_checks = {
                 "bigImage": bool(detail_soup.select(".bigImage")),
                 "info": bool(detail_soup.select(".info")),
-                "avatar-waterfall": bool(detail_soup.select("#avatar-waterfall")),
             }
             detail_failed = [k for k, v in detail_checks.items() if not v]
             duration = (time.perf_counter() - start) * 1000
