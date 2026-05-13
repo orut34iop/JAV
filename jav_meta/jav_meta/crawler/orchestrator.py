@@ -187,18 +187,29 @@ class CrawlOrchestrator:
                     )
 
                     page_had_error = False
+                    page_is_404 = False
                     try:
                         items = await self.scraper.crawl_list_page(page, uncensored=is_uncensored)
                     except Exception as e:
-                        logger.error(f"Failed to fetch list page {page}: {e}")
-                        items = None
-                        page_had_error = True
+                        err_msg = str(e)
+                        if "404" in err_msg or "Not Found" in err_msg:
+                            # 404 means page does not exist = end of catalog
+                            page_is_404 = True
+                            items = []
+                        else:
+                            logger.error(f"Failed to fetch list page {page}: {e}")
+                            items = None
+                            page_had_error = True
 
                     if items is None:
                         # Network error — not a true empty page, reset streak
                         empty_streak = 0
                         page += 1
                         continue
+
+                    if page_is_404:
+                        logger.info(f"Page {page} returned 404, treating as end of catalog.")
+                        break
 
                     if not items:
                         # Genuinely empty page (HTTP 200 but no movie-box items)
