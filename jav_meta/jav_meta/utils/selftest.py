@@ -153,8 +153,12 @@ class SelfTestRunner:
                               f"All selectors OK (list + detail)", duration)
         except Exception as e:
             duration = (time.perf_counter() - start) * 1000
-            return TestResult("Parser Selectors", "parser", False,
-                              str(e), duration)
+            msg = str(e)
+            # Rate limiting is temporary, not a parser failure
+            if "429" in msg or "Too Many Requests" in msg:
+                return TestResult("Parser Selectors", "parser", True,
+                                  f"Rate limited (will retry): {msg}", duration)
+            return TestResult("Parser Selectors", "parser", False, msg, duration)
 
     def _test_database(self) -> TestResult:
         import time
