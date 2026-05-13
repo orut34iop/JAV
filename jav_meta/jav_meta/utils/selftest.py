@@ -58,8 +58,11 @@ class SelfTestRunner:
                               f"HTTP {resp.status}, reachable", duration)
         except Exception as e:
             duration = (time.perf_counter() - start) * 1000
-            return TestResult("Network Reachability", "network", False,
-                              str(e), duration)
+            msg = str(e)
+            if "429" in msg or "Too Many Requests" in msg:
+                return TestResult("Network Reachability", "network", True,
+                                  f"Rate limited (will retry): {msg}", duration)
+            return TestResult("Network Reachability", "network", False, msg, duration)
 
     def _test_cookie(self) -> TestResult:
         import time

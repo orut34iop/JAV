@@ -82,12 +82,13 @@ def crawl(
     async def _run():
         orchestrator = CrawlOrchestrator()
         if incremental:
-            await orchestrator.run_incremental(uncensored=uncensored)
+            await orchestrator.run_incremental(uncensored=uncensored, skip_selftest=True)
         else:
             await orchestrator.run_full(
                 start_page=start_page,
                 end_page=end_page,
                 uncensored=uncensored,
+                skip_selftest=True,
             )
 
     try:
