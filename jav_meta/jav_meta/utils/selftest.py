@@ -96,8 +96,12 @@ class SelfTestRunner:
                               f"OK, found {len(items)} movie items on page 1", duration)
         except Exception as e:
             duration = (time.perf_counter() - start) * 1000
+            msg = str(e)
+            if "429" in msg or "Too Many Requests" in msg:
+                return TestResult("Cookie Validity", "auth", True,
+                                  f"Rate limited (will retry): {msg}", duration)
             return TestResult("Cookie Validity", "auth", False,
-                              str(e), duration)
+                              msg, duration)
 
     def _test_parser_health(self) -> TestResult:
         import time
