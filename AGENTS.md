@@ -29,9 +29,11 @@ jav_meta/                           # Project root for the Python package
 ├── README.md                       # Human-facing quick-start guide
 ├── .env / .env.example             # Runtime configuration (cookie, paths, proxy)
 ├── .gitignore                      # Excludes .env, db, images, logs
+├── daemon_runner.py                # Background daemon runner: auto-resume, auto-restart, progress logging
 ├── data/                           # Runtime data (SQLite DB, SQL dumps, images)
 │   ├── db.sqlite3                  # Local SQLite database
 │   ├── dumps/                      # Periodic SQL dumps generated during crawl
+│   ├── progress.json               # Real-time crawl progress for external monitoring
 │   └── images/
 │       ├── covers/                 # Movie cover art
 │       ├── posters/                # Movie poster art
@@ -42,7 +44,7 @@ jav_meta/                           # Project root for the Python package
 │   ├── cli.py                      # Typer CLI: init, crawl, scrape, search, selftest, daemon, stats
 │   ├── config.py                   # Pydantic-settings configuration (reads .env)
 │   ├── crawler/
-│   │   └── orchestrator.py         # CrawlOrchestrator: full / incremental crawl logic, progress reporting, auto-healing, SQL dumps
+│   │   └── orchestrator.py         # CrawlOrchestrator: full / incremental crawl logic, progress reporting, auto-healing, SQL dumps, checkpoint resume
 │   ├── database/
 │   │   ├── engine.py               # SQLAlchemy engine (SQLite, NullPool), SessionLocal, init_db
 │   │   └── models.py               # ORM models: Movie, Actress, Genre, Screenshot, Magnet, CrawlLog, Source
@@ -52,7 +54,7 @@ jav_meta/                           # Project root for the Python package
 │   │   ├── base.py                 # BaseScraper ABC, MovieData / ActressData / MagnetData dataclasses
 │   │   └── javbus.py               # JavBusScraper: list-page + detail-page parser with primary/fallback selector profiles
 │   └── utils/
-│       ├── http_client.py          # AdaptiveClient: async httpx client with semaphore, retries, adaptive concurrency
+│       ├── http_client.py          # AdaptiveClient: async httpx client with AdaptiveSemaphore, retries, adaptive concurrency
 │       ├── image_downloader.py     # ImageDownloader: async download covers/posters/screenshots/actress avatars
 │       ├── autoheal.py             # AutoHealer: heuristics to reduce concurrency / increase delay / switch fallback parsers
 │       ├── code_matcher.py         # Extract JAV codes from filenames, detect video files, detect filename tags
@@ -166,7 +168,11 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
    - 发现风险、隐患、或不确定的事项，必须主动报告，不得假设用户已知。
    - 报告问题时，必须同时给出解决方案或选项，不能只抛问题。
 
-6. **最小化改动**
+6. **文档同步**
+   - **任何代码修改（新增文件、变更接口、修改行为、新增命令）完成后，必须同步检查并更新 `README.md` 和 `AGENTS.md`。**
+   - 绝不允许代码和文档处于不一致状态。文档是项目的契约，代码是契约的实现，两者必须同步。
+
+7. **最小化改动**
    - 只做解决当前问题所必需的修改，绝不引入无关变更。
    - 不删除用户未要求删除的文件，不重构用户未要求重构的代码。
    - 保持向后兼容，除非用户明确要求 breaking change。
@@ -206,6 +212,7 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 - **Language**: All code and comments are written in English.
 - **Type hints**: Used throughout (`typing.Optional`, `List`, etc.).
 - **Async I/O**: All network operations use `async`/`await`. Database writes inside the crawler happen in synchronous SQLAlchemy sessions (SQLite).
+- **Documentation sync**: Any code modification (new files, changed interfaces, altered behavior, new commands) **must** trigger an immediate review of `README.md` and `AGENTS.md`. Never leave documentation out of sync with code.
 - **Settings**: All tunables live in `jav_meta.config.settings` (a Pydantic `BaseSettings` instance). Do not hard-code URLs, paths, or timeouts.
 - **Database sessions**: `SessionLocal` is instantiated per operation. The engine uses `NullPool` to avoid SQLite threading issues.
 - **Image paths**: Stored as relative POSIX paths (forward slashes) against `settings.project_root`.

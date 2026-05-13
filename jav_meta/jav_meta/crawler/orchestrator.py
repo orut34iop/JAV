@@ -53,7 +53,7 @@ class ProgressReporter:
                 self._print()
 
     def _print(self):
-        elapsed = (datetime.datetime.utcnow() - self.started_at).total_seconds()
+        elapsed = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - self.started_at).total_seconds()
         total = self.total_tasks or 1
         completed = self.completed_tasks
         pct = completed / total * 100 if total > 0 else 0
@@ -65,6 +65,23 @@ class ProgressReporter:
             f"Elapsed: {self._fmt(elapsed)} | ETA: {self._fmt(remaining)} | "
             f"Current: {self.current_task}"
         )
+        # Write structured progress file for external monitoring
+        try:
+            import json
+            progress_file = settings.data_dir / "progress.json"
+            progress_file.write_text(json.dumps({
+                "completed": completed,
+                "total": total,
+                "percentage": round(pct, 4),
+                "failed": self.failed_tasks,
+                "images": self.downloaded_images,
+                "elapsed_seconds": int(elapsed),
+                "eta_seconds": int(remaining),
+                "current_task": self.current_task,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
+            }, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     @staticmethod
     def _fmt(seconds: float) -> str:
@@ -106,6 +123,16 @@ class CrawlOrchestrator:
 
     async def run_full(self, start_page: int = 1, end_page: Optional[int] = None,
                        uncensored: bool = False, skip_selftest: bool = False):
+        # Auto-resume from last interrupted full crawl if no explicit start_page override
+        if start_page == 1:
+            with SessionLocal() as db:
+                last_log = db.query(CrawlLog).filter(
+                    CrawlLog.crawl_type == "full",
+                    CrawlLog.status.in_(["running", "failed"]),
+                ).order_by(CrawlLog.id.desc()).first()
+                if last_log and last_log.checkpoint_page and last_log.checkpoint_page > 1:
+                    start_page = last_log.checkpoint_page
+                    logger.info(f"Resuming full crawl from checkpoint page {start_page}")
         await self._run_crawl(
             crawl_type="full",
             start_page=start_page,
