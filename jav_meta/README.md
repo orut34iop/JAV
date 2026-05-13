@@ -5,24 +5,31 @@ Local JAV metadata database and scraper.
 ## Setup
 
 ```bash
-pip install -e "."
+# Install dependencies and create virtual environment
+uv sync
+
+# Run CLI
+uv run javdb --help
 ```
 
 ## Usage
 
 ```bash
 # Initialize database
-javdb init
+uv run javdb init
 
 # Full crawl from JavBus
-javdb crawl javbus --full
+uv run javdb crawl javbus --full
 
 # Incremental update
-javdb crawl javbus --incremental
+uv run javdb crawl javbus --incremental
 
 # Scrape local movie folder
-javdb scrape /path/to/movies
+uv run javdb scrape /path/to/movies
 
 # Search local database
-javdb search SSIS-001
+uv run javdb search SSIS-001
+
+# Run self-test before crawling
+uv run javdb selftest
 ```

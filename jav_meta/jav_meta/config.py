@@ -69,7 +69,8 @@ class JavMetaSettings(BaseSettings):
                      "covers_dir", "posters_dir", "screenshots_dir", "actresses_dir"]:
             p = getattr(self, attr)
             if not p.is_absolute():
-                setattr(self, attr, self.project_root / p)
+                p = self.project_root / p
+                setattr(self, attr, p)
             # db_path is a file, create its parent directory only
             if attr == "db_path":
                 p.parent.mkdir(parents=True, exist_ok=True)

@@ -23,7 +23,7 @@ from jav_meta.utils.selftest import SelfTestRunner
 class ProgressReporter:
     def __init__(self, interval: int = 180):
         self.interval = interval
-        self.started_at = datetime.datetime.utcnow()
+        self.started_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         self.total_tasks = 0
         self.completed_tasks = 0
         self.failed_tasks = 0
@@ -94,7 +94,7 @@ class CrawlOrchestrator:
         )
 
     def _on_reduce_concurrency(self, new_val: int):
-        self.client.semaphore = __import__('asyncio').Semaphore(new_val)
+        self.client.semaphore = asyncio.Semaphore(new_val)
         self.client.current_concurrency = new_val
 
     def _on_increase_delay(self, new_val: float):
@@ -283,7 +283,7 @@ class CrawlOrchestrator:
                     log = db.query(CrawlLog).filter(CrawlLog.id == log_id).first()
                     if log:
                         log.status = CrawlStatus.COMPLETED if completed_normally else CrawlStatus.FAILED
-                        log.finished_at = datetime.datetime.utcnow()
+                        log.finished_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
                         log.checkpoint_page = checkpoint_page
                         log.items_count = total_fetched
                         log.success_count = success_count

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from jav_meta.config import settings
 from jav_meta.database.engine import SessionLocal
-from jav_meta.database.models import Movie, Screenshot, ScreenshotType
+from jav_meta.database.models import Actress, Movie, Screenshot, ScreenshotType
 from jav_meta.utils.code_matcher import extract_code, is_video_file, detect_tags
 from jav_meta.utils.nfo_generator import save_nfo
 
@@ -179,7 +179,7 @@ class LocalScraper:
 
     def stats(self) -> dict:
         total_movies = self.db.query(Movie).count()
-        total_actresses = self.db.query(__import__('jav_meta.database.models', fromlist=['Actress']).Actress).count()
+        total_actresses = self.db.query(Actress).count()
         return {
             "movies": total_movies,
             "actresses": total_actresses,

@@ -128,6 +128,16 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 - 单个逻辑变更对应一个 commit，commit message 必须清晰描述改动内容。
 - 提交前必须确认没有敏感文件（如 `.env`）被意外纳入。
 
+### 代码自检清单（修改前/后必须执行）
+专家在修改任何代码前和提交前，必须主动完成以下检查，不得遗漏：
+
+1. **废弃 API 扫描**：检查是否使用了 Python 已废弃的 API（如 `datetime.utcnow()`、`imp` 模块、`asyncore` 等）。
+2. **并发安全审查**：任何修改 `asyncio.Semaphore`、`Lock`、`Event` 等同步原语的代码，必须评估运行时替换/调整的安全性。
+3. **README 一致性**：修改安装方式、运行命令或项目结构后，必须同步检查 `README.md` 是否仍然准确。
+4. **禁止运行时 `__import__`**：所有导入必须在文件顶部完成，绝不允许在函数体内使用 `__import__` 做动态导入。
+5. **资源泄漏检查**：创建 `httpx.Client`、数据库连接、文件句柄的代码，必须有对应的关闭/释放逻辑。
+6. **类型与接口一致性**：修改函数签名或模型字段后，检查所有调用点和 ORM 映射是否同步更新。
+
 ### 专家基本纪律（Software Engineering Fundamentals）
 以下规则不需要用户提醒，是专家自带的本能：
 
@@ -210,6 +220,21 @@ Both tests insert the project root into `sys.path` manually and are meant to be 
 - **验证状态**: 冒烟测试（`test_quick.py` + `test_crawl_smoke.py`）已于 2026-05-13 通过，系统当前工作正常。
 - **SQL 备份**: `data/dumps/` 下已有两次自动导出的 SQL dump，可作为回滚参考。
 - **环境**: `jav_meta/.venv` 已初始化，`uv sync` 已完成，依赖就绪。
+
+## Known Issues & Technical Debt
+
+> 当前代码中已确认但尚未修复的严重问题和新会话接手时必须知晓的风险。
+
+1. **http_client.py — 运行时替换 `asyncio.Semaphore`（严重并发安全 bug）**
+   - `_adapt_down()` 和 `_adapt_up()` 在运行中直接替换 `self.semaphore = asyncio.Semaphore(new_val)`。
+   - 如果有任务正在等待旧的 semaphore，替换后这些任务将永久死锁。
+   - **缓解**：当前代码在大多数场景下能工作（替换通常发生在无任务等待的间隙），但高并发或网络抖动时存在风险。
+   - **修复方向**：实现一个支持动态调整上限的自定义并发控制器，或改用基于 `asyncio.Lock` + 计数器的方案。
+
+2. **models.py — 大量使用已废弃的 `datetime.datetime.utcnow()`**
+   - 共 12 处 `default=datetime.datetime.utcnow` / `onupdate=datetime.datetime.utcnow`。
+   - Python 3.12+ 已将该方法标记为废弃，未来版本移除后将导致数据库默认值崩溃。
+   - **修复方向**：统一替换为 `datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)` 或自定义 `_utc_now()` 工厂函数。
 
 ---
 
