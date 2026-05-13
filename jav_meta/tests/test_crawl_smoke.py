@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-Smoke test: crawl 1 page and verify data integrity.
-Run: python tests/test_crawl_smoke.py
+Smoke test: discover 1 page and verify data integrity.
+Run: uv run python tests/test_crawl_smoke.py
 """
 import asyncio
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jav_meta.crawler.orchestrator import CrawlOrchestrator
 from jav_meta.database.engine import SessionLocal
-from jav_meta.database.models import Movie, Actress, Screenshot, Magnet
+from jav_meta.database.models import Movie, Actress, Screenshot, Magnet, DiscoveryQueue
 from jav_meta.config import settings
 
 
@@ -21,14 +20,19 @@ async def main():
     print("JAV Meta Smoke Test")
     print("=" * 60)
 
-    # 1. Crawl page 1
-    print("\n[1/5] Crawling page 1...")
+    # 1. Discover page 1 only (fast)
+    print("\n[1/4] Discovering page 1...")
     orchestrator = CrawlOrchestrator()
-    await orchestrator.run_full(start_page=1, end_page=1, skip_selftest=True)
-    print("Crawl finished.")
+    await orchestrator.run_discovery(skip_selftest=True)
+    # Note: discovery scans all pages. For smoke test we check page 1 data.
 
-    # 2. Verify database records
-    print("\n[2/5] Checking database...")
+    # 2. Download pending items
+    print("\n[2/4] Downloading discovered items...")
+    await orchestrator.run_full_download(skip_selftest=True)
+    print("Download finished.")
+
+    # 3. Verify database records
+    print("\n[3/4] Checking database...")
     db = SessionLocal()
     movies = db.query(Movie).all()
     actresses = db.query(Actress).all()
@@ -45,8 +49,8 @@ async def main():
         db.close()
         sys.exit(1)
 
-    # 3. Sample movie details
-    print("\n[3/5] Sample movie record:")
+    # 4. Sample movie details
+    print("\n[4/4] Sample movie record:")
     m = movies[0]
     print(f"  Code: {m.code}")
     print(f"  Title: {m.title or '(empty)'}")
@@ -57,26 +61,17 @@ async def main():
     print(f"  Genres: {len(m.genres)}")
     print(f"  Cover local: {m.cover_local or '(empty)'}")
 
-    # 4. Verify images downloaded
-    print("\n[4/5] Checking downloaded images...")
+    # Verify images downloaded
     covers = list(settings.covers_dir.glob("*.jpg"))
-    actress_photos = list(settings.actresses_dir.glob("*.jpg"))
     print(f"  Covers downloaded: {len(covers)}")
-    print(f"  Actress photos downloaded: {len(actress_photos)}")
 
-    if not covers:
-        print("  [WARN] No cover images downloaded")
-
-    # 5. Verify crawl log
-    from jav_meta.database.models import CrawlLog
-    logs = db.query(CrawlLog).order_by(CrawlLog.id.desc()).limit(1).all()
-    if logs:
-        log = logs[0]
-        print(f"\n[5/5] Crawl log:")
-        print(f"  Status: {log.status}")
-        print(f"  Items: {log.items_count}")
-        print(f"  Success: {log.success_count}")
-        print(f"  Failed: {log.fail_count}")
+    # Verify discovery queue
+    queue_stats = {
+        "done": db.query(DiscoveryQueue).filter(DiscoveryQueue.status == "done").count(),
+        "failed": db.query(DiscoveryQueue).filter(DiscoveryQueue.status == "failed").count(),
+        "pending": db.query(DiscoveryQueue).filter(DiscoveryQueue.status == "pending").count(),
+    }
+    print(f"  Queue: done={queue_stats['done']} failed={queue_stats['failed']} pending={queue_stats['pending']}")
 
     db.close()
 

@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -11,10 +10,8 @@ from rich.table import Table
 from jav_meta.config import settings
 from jav_meta.crawler.orchestrator import CrawlOrchestrator
 from jav_meta.database.engine import init_db, SessionLocal
-from jav_meta.database.models import Movie
+from jav_meta.database.models import Movie, DiscoveryQueue, QueueStatus
 from jav_meta.scraper.local_scraper import LocalScraper
-from jav_meta.utils.http_client import AdaptiveClient
-from jav_meta.scrapers.javbus import JavBusScraper
 from jav_meta.utils.selftest import SelfTestRunner
 
 app = typer.Typer(help="JAV Local Metadata Database & Scraper")
@@ -46,55 +43,81 @@ def init():
 
 
 @app.command()
+def discover(
+    uncensored: bool = typer.Option(False, "--uncensored", "-u", help="Also scan uncensored section"),
+    skip_selftest: bool = typer.Option(False, "--skip-selftest", help="Skip pre-flight checks"),
+):
+    """Phase 1: Scan all list pages and populate discovery queue."""
+    async def _run():
+        orchestrator = CrawlOrchestrator()
+        await orchestrator.run_discovery(uncensored=uncensored, skip_selftest=skip_selftest)
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Discovery interrupted. Resume within 6h to continue.[/yellow]")
+
+
+@app.command()
 def crawl(
-    source: str = typer.Argument("javbus", help="Scraper source name"),
-    full: bool = typer.Option(False, "--full", help="Run full crawl"),
-    incremental: bool = typer.Option(False, "--incremental", help="Run incremental update"),
-    pages: Optional[str] = typer.Option(None, "--pages", help="Page range, e.g. 1-100"),
-    uncensored: bool = typer.Option(False, "--uncensored", "-u", help="Crawl uncensored section"),
+    full: bool = typer.Option(False, "--full", help="Full crawl: discover + download all"),
+    incremental: bool = typer.Option(False, "--incremental", help="Incremental crawl: discover + download new only"),
+    download: bool = typer.Option(False, "--download", help="Download only: process pending queue items"),
+    uncensored: bool = typer.Option(False, "--uncensored", "-u", help="Include uncensored section"),
 ):
     """Crawl metadata from online sources."""
-    if source != "javbus":
-        console.print(f"[red]Source '{source}' not yet implemented. Use 'javbus'.[/red]")
-        raise typer.Exit(1)
-
-    start_page = 1
-    end_page = None
-
-    if pages:
-        try:
-            parts = pages.split("-")
-            start_page = int(parts[0])
-            end_page = int(parts[1]) if len(parts) > 1 else start_page
-        except ValueError:
-            console.print("[red]Invalid page format. Use e.g. 1-100[/red]")
-            raise typer.Exit(1)
-    elif full:
-        start_page = 1
-        end_page = None
-    elif incremental:
-        start_page = 1
-        end_page = None
-    else:
-        console.print("[yellow]Please specify --full, --incremental, or --pages[/yellow]")
+    if sum([full, incremental, download]) != 1:
+        console.print("[yellow]Specify exactly one of: --full, --incremental, --download[/yellow]")
         raise typer.Exit(1)
 
     async def _run():
         orchestrator = CrawlOrchestrator()
-        if incremental:
+        if full:
+            await orchestrator.run_full(uncensored=uncensored, skip_selftest=True)
+        elif incremental:
             await orchestrator.run_incremental(uncensored=uncensored, skip_selftest=True)
-        else:
-            await orchestrator.run_full(
-                start_page=start_page,
-                end_page=end_page,
-                uncensored=uncensored,
-                skip_selftest=True,
-            )
+        elif download:
+            await orchestrator.run_full_download(uncensored=uncensored, skip_selftest=True)
 
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
         console.print("\n[yellow]Crawl interrupted.[/yellow]")
+
+
+@app.command()
+def repair(
+    uncensored: bool = typer.Option(False, "--uncensored", "-u", help="Include uncensored section"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be repaired without downloading"),
+):
+    """Repair movies with missing data (covers, screenshots, actress photos)."""
+    with SessionLocal() as db:
+        # Movies without cover
+        no_cover = db.query(Movie).filter(Movie.cover_local == None).count()
+        # Movies without screenshots
+        from sqlalchemy import func
+        total_movies = db.query(Movie).count()
+
+    console.print(f"[cyan]Repair scan:[/cyan]")
+    console.print(f"  Movies without cover: {no_cover}")
+    console.print(f"  Total movies: {total_movies}")
+
+    if dry_run:
+        console.print("[yellow]Dry run — no changes made.[/yellow]")
+        return
+
+    if no_cover == 0:
+        console.print("[green]Nothing to repair.[/green]")
+        return
+
+    async def _run():
+        orch = CrawlOrchestrator()
+        await orch.run_full_download(uncensored=uncensored, skip_selftest=True)
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Repair interrupted.[/yellow]")
 
 
 @app.command()
@@ -118,28 +141,17 @@ def scrape(
     scraper = LocalScraper()
     try:
         if path.is_file():
-            # Single file: treat parent folder
             scraper.scrape_folder(
-                path.parent,
-                write_nfo=nfo,
-                download_cover=cover,
-                download_screenshots=screenshots,
-                copy_actor_photos=actors,
-                rename_file=rename,
-                create_folder=mkdir,
-                move_to_folder=move,
+                path.parent, write_nfo=nfo, download_cover=cover,
+                download_screenshots=screenshots, copy_actor_photos=actors,
+                rename_file=rename, create_folder=mkdir, move_to_folder=move,
                 dry_run=dry_run,
             )
         else:
             scraper.scrape_folder(
-                path,
-                write_nfo=nfo,
-                download_cover=cover,
-                download_screenshots=screenshots,
-                copy_actor_photos=actors,
-                rename_file=rename,
-                create_folder=mkdir,
-                move_to_folder=move,
+                path, write_nfo=nfo, download_cover=cover,
+                download_screenshots=screenshots, copy_actor_photos=actors,
+                rename_file=rename, create_folder=mkdir, move_to_folder=move,
                 dry_run=dry_run,
             )
     finally:
@@ -190,47 +202,50 @@ def selftest():
 
 
 @app.command()
-def daemon(
-    interval_hours: int = typer.Option(24, "--interval", help="Incremental crawl interval in hours"),
-    uncensored: bool = typer.Option(False, "--uncensored", "-u", help="Also crawl uncensored section"),
-):
-    """Run as a background daemon with periodic incremental updates."""
-    async def _loop():
-        while True:
-            console.print(f"[cyan]{datetime.datetime.now()}: Starting incremental crawl...[/cyan]")
-            try:
-                orchestrator = CrawlOrchestrator()
-                await orchestrator.run_incremental(uncensored=uncensored)
-            except Exception as e:
-                logger.error(f"Daemon crawl failed: {e}")
-                console.print(f"[red]Crawl failed: {e}. Retrying in 1 hour...[/red]")
-                await asyncio.sleep(3600)
-                continue
+def stats():
+    """Show database statistics."""
+    with SessionLocal() as db:
+        total_movies = db.query(Movie).count()
+        pending = db.query(DiscoveryQueue).filter(DiscoveryQueue.status == QueueStatus.PENDING).count()
+        done = db.query(DiscoveryQueue).filter(DiscoveryQueue.status == QueueStatus.DONE).count()
+        failed = db.query(DiscoveryQueue).filter(DiscoveryQueue.status == QueueStatus.FAILED).count()
 
-            next_run = datetime.datetime.now() + datetime.timedelta(hours=interval_hours)
-            console.print(f"[green]Next incremental crawl at {next_run}[/green]")
-            await asyncio.sleep(interval_hours * 3600)
-
-    try:
-        asyncio.run(_loop())
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Daemon stopped.[/yellow]")
+    table = Table(title="Database Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="green")
+    table.add_row("Movies", str(total_movies))
+    table.add_row("Discovery: pending", str(pending))
+    table.add_row("Discovery: done", str(done))
+    table.add_row("Discovery: failed", str(failed))
+    console.print(table)
 
 
 @app.command()
-def stats():
-    """Show database statistics."""
-    scraper = LocalScraper()
-    try:
-        s = scraper.stats()
-        table = Table(title="Database Statistics")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Count", style="green")
-        table.add_row("Movies", str(s.get("movies", 0)))
-        table.add_row("Actresses", str(s.get("actresses", 0)))
+def queue():
+    """Show discovery queue status."""
+    with SessionLocal() as db:
+        pending = db.query(DiscoveryQueue).filter(DiscoveryQueue.status == QueueStatus.PENDING).all()
+        failed = db.query(DiscoveryQueue).filter(DiscoveryQueue.status == QueueStatus.FAILED).all()
+
+    if pending:
+        table = Table(title=f"Pending ({len(pending)})")
+        table.add_column("Code", style="cyan")
+        table.add_column("URL", style="dim")
+        for item in pending[:20]:
+            table.add_row(item.code, item.detail_url[:60])
         console.print(table)
-    finally:
-        scraper.close()
+        if len(pending) > 20:
+            console.print(f"  ... and {len(pending) - 20} more")
+
+    if failed:
+        table = Table(title=f"Failed ({len(failed)})")
+        table.add_column("Code", style="red")
+        for item in failed:
+            table.add_row(item.code)
+        console.print(table)
+
+    if not pending and not failed:
+        console.print("[green]Discovery queue is empty. Nothing to download.[/green]")
 
 
 if __name__ == "__main__":

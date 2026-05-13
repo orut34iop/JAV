@@ -21,10 +21,11 @@ class MovieStatus(str, PyEnum):
     DEPRECATED = "deprecated"
 
 
-class CrawlStatus(str, PyEnum):
-    RUNNING = "running"
-    COMPLETED = "completed"
+class QueueStatus(str, PyEnum):
+    PENDING = "pending"
+    DONE = "done"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class ScreenshotType(str, PyEnum):
@@ -170,20 +171,14 @@ class Magnet(Base):
     )
 
 
-class CrawlLog(Base):
-    __tablename__ = "crawl_logs"
+class DiscoveryQueue(Base):
+    __tablename__ = "discovery_queue"
 
     id = Column(Integer, primary_key=True, index=True)
-    source_id = Column(Integer, ForeignKey("sources.id"), nullable=True)
-    crawl_type = Column(String(16), nullable=False)  # full / incremental
-    started_at = Column(DateTime, default=_utc_now)
-    finished_at = Column(DateTime, nullable=True)
-    page_from = Column(Integer, nullable=True)
-    page_to = Column(Integer, nullable=True)
-    items_count = Column(Integer, default=0)
-    success_count = Column(Integer, default=0)
-    fail_count = Column(Integer, default=0)
-    status = Column(String(16), default=CrawlStatus.RUNNING)
-    checkpoint_page = Column(Integer, nullable=True)
-    checkpoint_last_date = Column(Date, nullable=True)
-    message = Column(Text, nullable=True)
+    code = Column(String(64), unique=True, nullable=False, index=True)
+    movie_id = Column(Integer, ForeignKey("movies.id"), nullable=True)
+    detail_url = Column(Text, nullable=False)
+    source = Column(String(64), default="javbus")
+    status = Column(String(16), default=QueueStatus.PENDING)
+    discovered_at = Column(DateTime, default=_utc_now)
+    completed_at = Column(DateTime, nullable=True)

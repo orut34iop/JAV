@@ -34,15 +34,22 @@ class JavMetaSettings(BaseSettings):
     javbus_cookie: str = Field(default="")
     javbus_uncensored_url: str = Field(default="https://www.javbus.com/uncensored")
 
-    # Crawler
-    concurrency: int = Field(default=8)
-    adaptive_concurrency: bool = Field(default=True)
+    # Discovery phase (list pages only, aggressive)
+    discovery_concurrency: int = Field(default=1)
+    discovery_request_delay: float = Field(default=2.0)
+    discovery_max_retries: int = Field(default=3)
+    discovery_resume_window_hours: int = Field(default=6)
+    discovery_empty_page_threshold: int = Field(default=3)
+
+    # Download phase (detail pages + images, conservative)
+    concurrency: int = Field(default=1)
+    adaptive_concurrency: bool = Field(default=False)
     request_timeout: float = Field(default=30.0)
     max_retries: int = Field(default=3)
     retry_delays: List[float] = Field(default=[1.0, 3.0, 10.0])
-    request_delay: float = Field(default=0.5)
+    request_delay: float = Field(default=4.0)
     progress_interval_seconds: int = Field(default=180)
-    dump_interval_pages: int = Field(default=50)
+    dump_interval_items: int = Field(default=500)
 
     # Proxy (reserved)
     proxy_url: Optional[str] = Field(default=None)

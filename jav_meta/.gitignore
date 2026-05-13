@@ -39,6 +39,8 @@ data/db.sqlite3-journal
 data/dumps/*.sql
 data/images/
 !data/images/.gitkeep
+data/progress.json
+data/discovery_checkpoint.json
 logs/
 *.log
 
